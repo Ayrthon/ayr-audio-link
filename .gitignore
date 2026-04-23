@@ -1,0 +1,14 @@
+/target/
+/dist/
+Cargo.lock.bak
+
+# Build + editor ephemera
+**/*.rs.bk
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

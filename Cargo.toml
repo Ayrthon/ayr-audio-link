@@ -1,0 +1,87 @@
+# ---------------------------------------------------------------------------
+# Cargo workspace layout
+# ---------------------------------------------------------------------------
+#
+# Mirrors the AYR Audio Meter repo's layout so the pattern is reusable for
+# future companion apps under the AYR Audio brand:
+#
+#   * The repo root is simultaneously the `ayr-audio-link` package (the
+#     sender binary) AND the workspace root. This keeps `cargo build` at
+#     the root producing the shippable exe, which the installer script
+#     relies on.
+#   * `crates/ayr-audio-link-core` is the shared library — wire format,
+#     mDNS helpers, peer fingerprint. It's kept in this repo (rather than
+#     back in the Meter repo) because the protocol is Link's and the Meter
+#     is a consumer. The Meter references it via a path dep pointing at a
+#     sibling checkout (see its Cargo.toml).
+#
+# Build surface:
+#   cargo build                     → just the sender exe
+#   cargo build --workspace         → sender + core library
+#   cargo build -p ayr-audio-link-core
+#   cargo test  --workspace         → runs the protocol round-trip tests too
+[workspace]
+members = ["crates/ayr-audio-link-core"]
+resolver = "2"
+
+[package]
+name = "ayr-audio-link"
+version = "0.1.0"
+edition = "2024"
+description = "AYR Audio Link — free Windows companion that streams a local audio device over the LAN to AYR Audio Meter."
+
+[[bin]]
+name = "ayr-audio-link"
+path = "src/main.rs"
+
+[dependencies]
+ayr-audio-link-core = { path = "crates/ayr-audio-link-core" }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+# HTTP client for the in-app GitHub Releases auto-updater, same pattern the
+# Meter uses. Default features pull rustls + webpki-roots + json so HTTPS
+# against api.github.com works with zero per-platform TLS config.
+ureq = { version = "2", features = ["json"] }
+chrono = { version = "0.4", features = ["serde"] }
+# Audio capture. Same major as the Meter so device enumeration matches
+# across the two apps; users see the same device names in the Link picker
+# as in their DAW of choice.
+cpal = "0.17"
+egui = "0.34"
+
+# Linux / macOS: Glow (OpenGL). Keeps the build producing a usable binary
+# on a WSL-side `cargo check --all-targets` even though Link only ships
+# for Windows.
+[target.'cfg(not(windows))'.dependencies]
+eframe = { version = "0.34", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+
+# Windows: wgpu only. Same rationale as the Meter's Cargo.toml — pulling
+# `glow` in on Windows statically links `opengl32.dll`, which triggers the
+# NVIDIA user-mode driver's stack overflow when another process is using
+# the GPU. Dropping `glow` from the feature set avoids that whole class of
+# crash. See the Meter repo's Cargo.toml for the full diagnostic writeup.
+[target.'cfg(windows)'.dependencies]
+eframe = { version = "0.34", default-features = false, features = [
+    "default_fonts",
+    "wgpu",
+] }
+# Windows loopback capture + MachineGuid access (for the peer fingerprint
+# used by the pairing-trust cache).
+wasapi = "0.23"
+winreg = "0.52"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
