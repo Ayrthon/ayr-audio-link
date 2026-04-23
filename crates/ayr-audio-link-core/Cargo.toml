@@ -1,6 +1,6 @@
 [package]
 name = "ayr-audio-link-core"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Shared wire format, mDNS discovery, and peer-identity helpers for the AYR Audio Link LAN audio protocol. Consumed by both the Link sender and the AYR Audio Meter receiver."
 publish = false

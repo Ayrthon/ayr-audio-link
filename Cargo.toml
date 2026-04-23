@@ -26,7 +26,7 @@ resolver = "2"
 
 [package]
 name = "ayr-audio-link"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "AYR Audio Link — free Windows companion that streams a local audio device over the LAN to AYR Audio Meter."
 

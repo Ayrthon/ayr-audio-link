@@ -9,7 +9,7 @@
 ; them as `[NET] <name>` entries in its device dropdown.
 
 #define MyAppName        "AYR Audio Link"
-#define MyAppVersion     "0.1.0"
+#define MyAppVersion     "0.1.1"
 #define MyAppPublisher   "Ayrthon"
 #define MyAppURL         "https://ayrthon.com"
 #define MyAppExeName     "AYR Audio Link.exe"

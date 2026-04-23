@@ -43,12 +43,12 @@ fn ayr_link_build_label() -> &'static str {
     option_env!("AYR_LINK_BUILD").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
+/// Native inner client width (fixed window). Must match the width clamp in `main.rs` (`ViewportBuilder`).
+pub(crate) const LINK_VIEWPORT_INNER_WIDTH_PX: f32 = 425.0;
+
 /// Cap for the device picker width (closed button + popup track this slot). Wider cards still align
 /// with other sections; the combo does not need to span the full row.
 const DEVICE_COMBO_MAX_WIDTH_PX: f32 = 240.0;
-
-/// Horizontal space budget for the device list **Refresh** text button (label + padding).
-const DEVICE_REFRESH_BTN_RESERVE_X: f32 = 96.0;
 
 /// [`egui::Frame`] allocates and paints from the content [`Ui::min_rect`], not `max_rect`.
 /// Widen `min_rect` to the parent’s full **width** only — including all of [`Ui::max_rect`]
@@ -296,7 +296,7 @@ impl LinkApp {
                 let banner = Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(12, 42, 48, 240))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(255, 0, 180)))
+                    .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8));
                 banner.show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
@@ -330,7 +330,7 @@ impl LinkApp {
                 Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(14, 28, 40, 240))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(200, 255, 0)))
+                    .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         theme::fill_horizontal_strip(ui);
@@ -361,7 +361,7 @@ impl LinkApp {
                 Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(14, 36, 40, 240))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(100, 220, 255)))
+                    .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         theme::fill_horizontal_strip(ui);
@@ -412,7 +412,7 @@ impl LinkApp {
                 Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(40, 20, 16, 245))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(255, 120, 80)))
+                    .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         theme::fill_horizontal_strip(ui);
@@ -473,10 +473,7 @@ impl LinkApp {
         Frame::NONE
             .fill(header_bg)
             .corner_radius(CornerRadius::same(14))
-            .stroke(theme::layout_debug_stroke_prod(
-                theme::GLASS_STROKE,
-                Color32::from_rgb(255, 255, 0),
-            ))
+            .stroke(Stroke::new(1.0, theme::GLASS_STROKE))
             .inner_margin(egui::Margin::symmetric(14, 12))
             .outer_margin(egui::Margin {
                 left: 0,
@@ -564,36 +561,25 @@ impl eframe::App for LinkApp {
 
         egui::CentralPanel::default()
             .frame(
-                Frame::NONE
-                    .inner_margin(egui::Margin::symmetric(20, 18))
-                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(255, 0, 255))),
+                Frame::NONE.inner_margin(egui::Margin::symmetric(20, 18)),
             )
             .show_inside(ui, |ui| {
                 let panel_rect = ui.max_rect();
                 theme::paint_background(&ui.painter(), panel_rect);
 
-                let content_width = ui.available_width();
                 let scroll_out = egui::ScrollArea::vertical()
                     .id_salt("ayr_link_root_scroll")
                     .show(ui, |ui| {
-                        Frame::NONE
-                            .stroke(theme::layout_debug_stroke_prod_none(
-                                Color32::from_rgb(0, 255, 255),
-                            ))
-                            .inner_margin(egui::Margin::same(0))
-                            .show(ui, |ui| {
+                        // Width must come from *inside* the scroll area: when a vertical scrollbar is
+                        // present, content `available_width()` is smaller than the panel's. Using the
+                        // pre-scroll width here overflows to the right.
+                        let scroll_content_w = ui.available_width();
                         ui.vertical(|ui| {
-                            ui.set_width(content_width);
+                            ui.set_width(scroll_content_w);
                             ui.spacing_mut().item_spacing.y = theme::SECTION_STACK_GAP as f32;
 
                             self.draw_app_header(ui);
 
-                    Frame::NONE
-                        .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(
-                            180, 255, 100,
-                        )))
-                        .inner_margin(egui::Margin::same(0))
-                        .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 theme::fill_horizontal_strip(ui);
                                 ui.with_layout(
@@ -607,14 +593,9 @@ impl eframe::App for LinkApp {
                                     },
                                 );
                             });
-                        });
-                    self.maybe_draw_update_banner(ui);
+                            self.maybe_draw_update_banner(ui);
 
                     theme::glass_frame()
-                        .stroke(theme::layout_debug_stroke_prod(
-                            theme::GLASS_STROKE,
-                            Color32::from_rgb(255, 64, 64),
-                        ))
                         .show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
                     let section_w = ui.available_width();
@@ -671,10 +652,6 @@ impl eframe::App for LinkApp {
                     });
 
                     theme::glass_frame()
-                        .stroke(theme::layout_debug_stroke_prod(
-                            theme::GLASS_STROKE,
-                            Color32::from_rgb(80, 255, 80),
-                        ))
                         .show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
                     let section_w = ui.available_width();
@@ -702,6 +679,7 @@ impl eframe::App for LinkApp {
                                 .collect();
                             let mut pending_select: Option<usize> = None;
                             let mut pending_refresh = false;
+                            let allow_device_ui = !self.broadcast_session_busy();
                             // ComboBox's closed button fills whatever vertical space the parent offers.
                             // A bare `with_layout` row gets the full column height → huge gap above the
                             // control and a narrow `min_rect` → glass card shrinks. Use a fixed-height
@@ -713,19 +691,36 @@ impl eframe::App for LinkApp {
                             // slot so the card width tracks the other sections.
                             let row_h = ui.spacing().interact_size.y;
                             let row_w = ui.available_width();
+                            ui.add_enabled_ui(allow_device_ui, |ui| {
                             ui.allocate_ui_with_layout(
                                 egui::vec2(row_w, row_h),
                                 egui::Layout::left_to_right(Align::Center),
                                 |ui| {
                                     theme::fill_horizontal_strip(ui);
                                     ui.spacing_mut().item_spacing.x = theme::GAP_SM;
-                                    let reserve_refresh =
-                                        theme::GAP_SM + DEVICE_REFRESH_BTN_RESERVE_X;
-                                    let combo_w = (ui.available_width()
-                                        - reserve_refresh
-                                        - theme::GAP_SM)
+                                    let refresh_richtext =
+                                        RichText::new("Refresh").color(theme::CYAN_BRIGHT);
+                                    let refresh_btn_w = egui::WidgetText::from(
+                                        refresh_richtext.clone(),
+                                    )
+                                    .into_galley(
+                                        ui,
+                                        None,
+                                        f32::INFINITY,
+                                        egui::TextStyle::Button,
+                                    )
+                                    .size()
+                                    .x
+                                        + 2.0 * ui.spacing().button_padding.x;
+                                    let room = (ui.available_width()
+                                        - theme::GAP_SM
+                                        - refresh_btn_w)
+                                        .max(0.0);
+                                    // Prefer ≥160 when there is room; never exceed `room` (narrow windows).
+                                    let combo_w = room
                                         .min(DEVICE_COMBO_MAX_WIDTH_PX)
-                                        .max(160.0);
+                                        .max(160.0)
+                                        .min(room);
                                     let selected_label = current_sel
                                         .and_then(|i| self.devices.get(i))
                                         .map(device_label)
@@ -795,18 +790,28 @@ impl eframe::App for LinkApp {
                                                     );
                                                 });
                                         });
-                                    if ui
-                                        .button(
-                                            RichText::new("Refresh").color(theme::CYAN_BRIGHT),
-                                        )
-                                        .on_hover_text("Refresh device list")
-                                        .clicked()
-                                    {
-                                        pending_refresh = true;
-                                    }
+                                    // Put slack to the left of Refresh so nothing sits past the label
+                                    // on the right (fixed reserve used to leave dead space there).
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .button(refresh_richtext)
+                                                .on_hover_text(if allow_device_ui {
+                                                    "Refresh device list"
+                                                } else {
+                                                    "Unavailable while broadcasting — stop to change source or refresh."
+                                                })
+                                                .clicked()
+                                            {
+                                                pending_refresh = true;
+                                            }
+                                        },
+                                    );
                                     ui.expand_to_include_rect(ui.max_rect());
                                 },
                             );
+                            });
                             if let Some(i) = pending_select {
                                 self.selected_device = Some(i);
                             }
@@ -830,10 +835,6 @@ impl eframe::App for LinkApp {
                     });
 
                     theme::glass_frame()
-                        .stroke(theme::layout_debug_stroke_prod(
-                            theme::GLASS_STROKE,
-                            Color32::from_rgb(120, 160, 255),
-                        ))
                         .show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
                     let section_w = ui.available_width();
@@ -850,12 +851,6 @@ impl eframe::App for LinkApp {
                     });
 
                     ui.add_space(theme::GAP_MD);
-                    Frame::NONE
-                        .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(
-                            255, 160, 0,
-                        )))
-                        .inner_margin(egui::Margin::same(0))
-                        .show(ui, |ui| {
                     ui.vertical(|ui| {
                         theme::fill_horizontal_strip(ui);
                         let section_w = ui.available_width();
@@ -886,9 +881,7 @@ impl eframe::App for LinkApp {
                             Frame::NONE
                                 .fill(Color32::from_rgba_unmultiplied(48, 14, 18, 245))
                                 .corner_radius(CornerRadius::same(10))
-                                .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(
-                                    255, 40, 255,
-                                )))
+                                .stroke(Stroke::NONE)
                                 .inner_margin(egui::Margin::symmetric(12, 8))
                                 .show(ui, |ui| {
                                     theme::fill_horizontal_strip(ui);
@@ -897,13 +890,10 @@ impl eframe::App for LinkApp {
                         }
                         expand_frame_to_row(ui);
                     });
-                        });
-                        });
                     });
                     });
 
                 // Grow / shrink the native window to match laid-out content height.
-                const VIEWPORT_W: f32 = 400.0;
                 const MIN_INNER_H: f32 = 520.0;
                 const MAX_INNER_H: f32 = 1200.0;
                 // Scroll content height excludes some chrome; pad so the last row is not tight.
@@ -914,7 +904,7 @@ impl eframe::App for LinkApp {
                     let cur_h = ir.height();
                     if (want_h - cur_h).abs() > 2.0 {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::InnerSize(
-                            egui::vec2(VIEWPORT_W, want_h),
+                            egui::vec2(LINK_VIEWPORT_INNER_WIDTH_PX, want_h),
                         ));
                     }
                 }

@@ -46,12 +46,12 @@ fn main() -> eframe::Result<()> {
     }));
 
     let icon = load_icon();
-    // Width stays fixed; height is driven from the UI (see `LinkApp::ui`) so
-    // expanding sections (e.g. Identity "Edit") do not clip. Cap avoids tiny laptops.
+    // Fixed inner width; height is driven from the UI (see `LinkApp::ui`) so tall content does not clip.
+    let w = app::LINK_VIEWPORT_INNER_WIDTH_PX;
     let viewport = ViewportBuilder::default()
-        .with_inner_size([400.0, 640.0])
-        .with_min_inner_size([400.0, 520.0])
-        .with_max_inner_size([400.0, 1200.0])
+        .with_inner_size([w, 640.0])
+        .with_min_inner_size([w, 520.0])
+        .with_max_inner_size([w, 1200.0])
         .with_resizable(false)
         .with_maximize_button(false)
         .with_title("AYR Audio Link")
