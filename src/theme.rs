@@ -19,6 +19,27 @@ pub const MUTED: Color32 = Color32::from_rgba_unmultiplied_const(140, 165, 195, 
 pub const GLASS_FILL: Color32 = Color32::from_rgba_unmultiplied_const(12, 18, 30, 235);
 pub const GLASS_STROKE: Color32 = Color32::from_rgba_unmultiplied_const(255, 255, 255, 18);
 
+/// When `true`, major containers get **1px** saturated outline colors (layout debug). Turn off for normal chrome.
+pub const DEBUG_LAYOUT_OUTLINES: bool = true;
+
+#[inline]
+pub fn layout_debug_stroke_prod(prod: Color32, dev: Color32) -> Stroke {
+    if DEBUG_LAYOUT_OUTLINES {
+        Stroke::new(1.0, dev)
+    } else {
+        Stroke::new(1.0, prod)
+    }
+}
+
+#[inline]
+pub fn layout_debug_stroke_prod_none(dev: Color32) -> Stroke {
+    if DEBUG_LAYOUT_OUTLINES {
+        Stroke::new(1.0, dev)
+    } else {
+        Stroke::NONE
+    }
+}
+
 /// Vertical / section rhythm (px). Use these instead of ad-hoc literals.
 pub const GAP_XS: f32 = 4.0;
 pub const GAP_SM: f32 = 6.0;

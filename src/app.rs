@@ -8,7 +8,7 @@
 //! │  AYR Audio Link                               │
 //! │  Broadcasting as: MikeStudio-PC (Input 1/2)   │
 //! │                                               │
-//! │  Source: [ dropdown ]                    [🔄]  │
+//! │  Source: [ dropdown ]                 [Refresh] │
 //! │  ████████████████████░░░░░░░░░  -12.4 dBFS   │
 //! │                                               │
 //! │  Status: Listening on :45451                  │
@@ -41,6 +41,30 @@ use crate::updater;
 #[inline]
 fn ayr_link_build_label() -> &'static str {
     option_env!("AYR_LINK_BUILD").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
+/// Cap for the device picker width (closed button + popup track this slot). Wider cards still align
+/// with other sections; the combo does not need to span the full row.
+const DEVICE_COMBO_MAX_WIDTH_PX: f32 = 240.0;
+
+/// Horizontal space budget for the device list **Refresh** text button (label + padding).
+const DEVICE_REFRESH_BTN_RESERVE_X: f32 = 96.0;
+
+/// [`egui::Frame`] allocates and paints from the content [`Ui::min_rect`], not `max_rect`.
+/// Widen `min_rect` to the parent’s full **width** only — including all of [`Ui::max_rect`]
+/// would also match its **height** (often the whole scroll viewport) and blows the card open.
+#[inline]
+fn expand_frame_to_row(ui: &mut egui::Ui) {
+    let cur = ui.min_rect();
+    let maxr = ui.max_rect();
+    if !(maxr.width() > 0.0 && maxr.height() > 0.0) {
+        return;
+    }
+    let widen = egui::Rect::from_min_max(
+        egui::pos2(maxr.min.x, cur.min.y),
+        egui::pos2(maxr.max.x, cur.max.y),
+    );
+    ui.expand_to_include_rect(widen);
 }
 
 pub struct LinkApp {
@@ -272,7 +296,7 @@ impl LinkApp {
                 let banner = Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(12, 42, 48, 240))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::NONE)
+                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(255, 0, 180)))
                     .inner_margin(egui::Margin::symmetric(12, 8));
                 banner.show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
@@ -306,7 +330,7 @@ impl LinkApp {
                 Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(14, 28, 40, 240))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::NONE)
+                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(200, 255, 0)))
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         theme::fill_horizontal_strip(ui);
@@ -337,7 +361,7 @@ impl LinkApp {
                 Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(14, 36, 40, 240))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::NONE)
+                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(100, 220, 255)))
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         theme::fill_horizontal_strip(ui);
@@ -388,7 +412,7 @@ impl LinkApp {
                 Frame::NONE
                     .fill(Color32::from_rgba_unmultiplied(40, 20, 16, 245))
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::NONE)
+                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(255, 120, 80)))
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
                         theme::fill_horizontal_strip(ui);
@@ -449,7 +473,10 @@ impl LinkApp {
         Frame::NONE
             .fill(header_bg)
             .corner_radius(CornerRadius::same(14))
-            .stroke(Stroke::new(1.0, theme::GLASS_STROKE))
+            .stroke(theme::layout_debug_stroke_prod(
+                theme::GLASS_STROKE,
+                Color32::from_rgb(255, 255, 0),
+            ))
             .inner_margin(egui::Margin::symmetric(14, 12))
             .outer_margin(egui::Margin {
                 left: 0,
@@ -536,7 +563,11 @@ impl eframe::App for LinkApp {
         self.reconcile_mdns();
 
         egui::CentralPanel::default()
-            .frame(Frame::NONE.inner_margin(egui::Margin::symmetric(20, 18)))
+            .frame(
+                Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(20, 18))
+                    .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(255, 0, 255))),
+            )
             .show_inside(ui, |ui| {
                 let panel_rect = ui.max_rect();
                 theme::paint_background(&ui.painter(), panel_rect);
@@ -545,26 +576,49 @@ impl eframe::App for LinkApp {
                 let scroll_out = egui::ScrollArea::vertical()
                     .id_salt("ayr_link_root_scroll")
                     .show(ui, |ui| {
+                        Frame::NONE
+                            .stroke(theme::layout_debug_stroke_prod_none(
+                                Color32::from_rgb(0, 255, 255),
+                            ))
+                            .inner_margin(egui::Margin::same(0))
+                            .show(ui, |ui| {
                         ui.vertical(|ui| {
                             ui.set_width(content_width);
                             ui.spacing_mut().item_spacing.y = theme::SECTION_STACK_GAP as f32;
 
                             self.draw_app_header(ui);
 
-                    ui.horizontal(|ui| {
-                        theme::fill_horizontal_strip(ui);
-                        ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                            render_link_update_status_chip(
-                                ui,
-                                &self.update,
-                                &mut self.update_dismissed,
-                            );
+                    Frame::NONE
+                        .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(
+                            180, 255, 100,
+                        )))
+                        .inner_margin(egui::Margin::same(0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                theme::fill_horizontal_strip(ui);
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(Align::Center),
+                                    |ui| {
+                                        render_link_update_status_chip(
+                                            ui,
+                                            &self.update,
+                                            &mut self.update_dismissed,
+                                        );
+                                    },
+                                );
+                            });
                         });
-                    });
                     self.maybe_draw_update_banner(ui);
 
-                    theme::glass_frame().show(ui, |ui| {
+                    theme::glass_frame()
+                        .stroke(theme::layout_debug_stroke_prod(
+                            theme::GLASS_STROKE,
+                            Color32::from_rgb(255, 64, 64),
+                        ))
+                        .show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
+                    let section_w = ui.available_width();
+                    ui.set_min_width(section_w);
                     ui.spacing_mut().item_spacing.y = theme::GAP_SM;
                     ui.with_layout(egui::Layout::left_to_right(Align::TOP), |ui| {
                         theme::section_icon(ui, "💻");
@@ -613,10 +667,18 @@ impl eframe::App for LinkApp {
                         &mut self.minimize_on_close,
                         "Minimize on close (stay in taskbar)",
                     );
+                    expand_frame_to_row(ui);
                     });
 
-                    theme::glass_frame().show(ui, |ui| {
+                    theme::glass_frame()
+                        .stroke(theme::layout_debug_stroke_prod(
+                            theme::GLASS_STROKE,
+                            Color32::from_rgb(80, 255, 80),
+                        ))
+                        .show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
+                    let section_w = ui.available_width();
+                    ui.set_min_width(section_w);
                     ui.with_layout(egui::Layout::left_to_right(Align::TOP), |ui| {
                         theme::section_icon(ui, "🔊");
                         ui.add_space(10.0);
@@ -644,6 +706,11 @@ impl eframe::App for LinkApp {
                             // A bare `with_layout` row gets the full column height → huge gap above the
                             // control and a narrow `min_rect` → glass card shrinks. Use a fixed-height
                             // cell and expand `min_rect` to that cell so width matches YOUR SYSTEM.
+                            //
+                            // `ComboBox::width(w)` in egui is a *minimum* only; the button still lays
+                            // out selected text against the full row width, so the control can grow to
+                            // the whole row and squeeze the refresh control — nest it in a fixed-width
+                            // slot so the card width tracks the other sections.
                             let row_h = ui.spacing().interact_size.y;
                             let row_w = ui.available_width();
                             ui.allocate_ui_with_layout(
@@ -652,81 +719,85 @@ impl eframe::App for LinkApp {
                                 |ui| {
                                     theme::fill_horizontal_strip(ui);
                                     ui.spacing_mut().item_spacing.x = theme::GAP_SM;
-                                    let refresh_side = row_h;
-                                    let reserve_refresh = theme::GAP_SM + refresh_side;
+                                    let reserve_refresh =
+                                        theme::GAP_SM + DEVICE_REFRESH_BTN_RESERVE_X;
                                     let combo_w = (ui.available_width()
                                         - reserve_refresh
                                         - theme::GAP_SM)
+                                        .min(DEVICE_COMBO_MAX_WIDTH_PX)
                                         .max(160.0);
                                     let selected_label = current_sel
                                         .and_then(|i| self.devices.get(i))
                                         .map(device_label)
                                         .unwrap_or_else(|| "(none)".into());
-                                    egui::ComboBox::from_id_salt("device_combo")
-                                        .popup_style(theme::combo_popup_style())
-                                        .selected_text(
-                                            RichText::new(selected_label).color(Color32::WHITE),
-                                        )
-                                        .width(combo_w)
-                                        .height(260.0)
-                                        .truncate()
-                                        .show_ui(ui, |ui| {
-                                            // ComboBox defaults the menu to `Extend`, which widens the
-                                            // popup to fit long device names — keep width = combo button.
-                                            ui.style_mut()
-                                                .wrap_mode = Some(egui::TextWrapMode::Truncate);
-                                            let menu_w = ui.available_width();
-                                            ui.set_width(menu_w);
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(combo_w, row_h),
+                                        egui::Layout::left_to_right(Align::Center),
+                                        |ui| {
+                                            theme::fill_horizontal_strip(ui);
+                                            egui::ComboBox::from_id_salt("device_combo")
+                                                .popup_style(theme::combo_popup_style())
+                                                .selected_text(
+                                                    RichText::new(selected_label)
+                                                        .color(Color32::WHITE),
+                                                )
+                                                .width(combo_w)
+                                                // Popup menu max height (scrolls inside if needed).
+                                                .height(160.0)
+                                                .truncate()
+                                                .show_ui(ui, |ui| {
+                                                    // ComboBox defaults the menu to `Extend`, which widens the
+                                                    // popup to fit long device names — keep width = combo button.
+                                                    ui.style_mut()
+                                                        .wrap_mode = Some(egui::TextWrapMode::Truncate);
+                                                    let menu_w = ui.available_width();
+                                                    ui.set_width(menu_w);
 
-                                            let mut section = |ui: &mut egui::Ui,
-                                                               title: &str,
-                                                               kind: SourceKind| {
-                                                ui.add(
-                                                    egui::Label::new(
-                                                        RichText::new(title)
-                                                            .size(11.0)
-                                                            .strong()
-                                                            .color(theme::CYAN),
-                                                    )
-                                                    .truncate(),
-                                                );
-                                                for (i, (k, name)) in
-                                                    devices_snapshot.iter().enumerate()
-                                                {
-                                                    if *k != kind {
-                                                        continue;
-                                                    }
-                                                    let sel = Some(i) == current_sel;
-                                                    if ui
-                                                        .add(
-                                                            egui::Button::selectable(
-                                                                sel,
-                                                                name.as_str(),
+                                                    let mut section = |ui: &mut egui::Ui,
+                                                                       title: &str,
+                                                                       kind: SourceKind| {
+                                                        ui.add(
+                                                            egui::Label::new(
+                                                                RichText::new(title)
+                                                                    .size(11.0)
+                                                                    .strong()
+                                                                    .color(theme::CYAN),
                                                             )
                                                             .truncate(),
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        pending_select = Some(i);
-                                                    }
-                                                }
-                                            };
-                                            section(ui, "INPUTS (mic / line)", SourceKind::Input);
-                                            ui.separator();
-                                            section(
-                                                ui,
-                                                "LOOPBACK (what speakers play)",
-                                                SourceKind::Loopback,
-                                            );
+                                                        );
+                                                        for (i, (k, name)) in
+                                                            devices_snapshot.iter().enumerate()
+                                                        {
+                                                            if *k != kind {
+                                                                continue;
+                                                            }
+                                                            let sel = Some(i) == current_sel;
+                                                            if ui
+                                                                .add(
+                                                                    egui::Button::selectable(
+                                                                        sel,
+                                                                        name.as_str(),
+                                                                    )
+                                                                    .truncate(),
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                pending_select = Some(i);
+                                                            }
+                                                        }
+                                                    };
+                                                    section(ui, "INPUTS (mic / line)", SourceKind::Input);
+                                                    ui.separator();
+                                                    section(
+                                                        ui,
+                                                        "LOOPBACK (what speakers play)",
+                                                        SourceKind::Loopback,
+                                                    );
+                                                });
                                         });
                                     if ui
-                                        .add_sized(
-                                            egui::vec2(refresh_side, refresh_side),
-                                            egui::Button::new(
-                                                RichText::new("🔄")
-                                                    .size(16.0)
-                                                    .color(theme::CYAN_BRIGHT),
-                                            ),
+                                        .button(
+                                            RichText::new("Refresh").color(theme::CYAN_BRIGHT),
                                         )
                                         .on_hover_text("Refresh device list")
                                         .clicked()
@@ -755,10 +826,18 @@ impl eframe::App for LinkApp {
                             draw_level_bar(ui, *self.level_shared.lock());
                         });
                     });
+                    expand_frame_to_row(ui);
                     });
 
-                    theme::glass_frame().show(ui, |ui| {
+                    theme::glass_frame()
+                        .stroke(theme::layout_debug_stroke_prod(
+                            theme::GLASS_STROKE,
+                            Color32::from_rgb(120, 160, 255),
+                        ))
+                        .show(ui, |ui| {
                     theme::fill_horizontal_strip(ui);
+                    let section_w = ui.available_width();
+                    ui.set_min_width(section_w);
                     let status = self.server.status();
                     draw_status_block(
                         ui,
@@ -767,12 +846,21 @@ impl eframe::App for LinkApp {
                         self.stopping_capture(),
                         self.advertiser.is_some(),
                     );
+                    expand_frame_to_row(ui);
                     });
 
                     ui.add_space(theme::GAP_MD);
+                    Frame::NONE
+                        .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(
+                            255, 160, 0,
+                        )))
+                        .inner_margin(egui::Margin::same(0))
+                        .show(ui, |ui| {
                     ui.vertical(|ui| {
                         theme::fill_horizontal_strip(ui);
-                        let full_btn_w = ui.available_width();
+                        let section_w = ui.available_width();
+                        ui.set_min_width(section_w);
+                        let full_btn_w = section_w;
                         if self.capture_alive() {
                             if theme::gradient_stop_button(ui, "Stop broadcasting", full_btn_w).clicked()
                             {
@@ -798,15 +886,20 @@ impl eframe::App for LinkApp {
                             Frame::NONE
                                 .fill(Color32::from_rgba_unmultiplied(48, 14, 18, 245))
                                 .corner_radius(CornerRadius::same(10))
-                                .stroke(Stroke::NONE)
+                                .stroke(theme::layout_debug_stroke_prod_none(Color32::from_rgb(
+                                    255, 40, 255,
+                                )))
                                 .inner_margin(egui::Margin::symmetric(12, 8))
                                 .show(ui, |ui| {
                                     theme::fill_horizontal_strip(ui);
                                     ui.colored_label(Color32::from_rgb(255, 170, 170), err);
                                 });
                         }
+                        expand_frame_to_row(ui);
                     });
                         });
+                        });
+                    });
                     });
 
                 // Grow / shrink the native window to match laid-out content height.
@@ -1028,6 +1121,8 @@ fn draw_status_block(
         ui.add_space(10.0);
         ui.vertical(|ui| {
             theme::fill_horizontal_strip(ui);
+            let col_w = ui.available_width();
+            ui.set_min_width(col_w);
             ui.spacing_mut().item_spacing.y = theme::GAP_XS;
             ui.label(
                 RichText::new("NETWORK")

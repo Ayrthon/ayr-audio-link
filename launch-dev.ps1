@@ -48,7 +48,26 @@ foreach ($p in Get-Process -ErrorAction SilentlyContinue) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
     }
 }
-Start-Sleep -Milliseconds 400
+
+# Wait until staged copies are gone so Copy-Item does not race an in-use exe.
+$deadline = (Get-Date).AddSeconds(8)
+while ((Get-Date) -lt $deadline) {
+    $still = @()
+    foreach ($p in Get-Process -ErrorAction SilentlyContinue) {
+        try { $exePath = $p.MainModule.FileName } catch { continue }
+        if (-not $exePath) { continue }
+        $dir = [IO.Path]::GetDirectoryName($exePath)
+        $leaf = [IO.Path]::GetFileName($exePath)
+        if ($dir.Equals($cacheFull, [StringComparison]::OrdinalIgnoreCase) -and ($leaf -like 'ayr-audio-link*.exe')) {
+            $still += $p
+        }
+    }
+    if ($still.Count -eq 0) { break }
+    Start-Sleep -Milliseconds 250
+}
+if ((Get-Date) -ge $deadline) {
+    Write-Warning "Timed out waiting for old AYR Audio Link to exit; copy/start may fail if the exe is locked."
+}
 
 $LocalExe = Join-Path $Cache "ayr-audio-link.exe"
 Copy-Item -Path $Exe -Destination $LocalExe -Force
@@ -59,4 +78,8 @@ $staged = (Get-Item $LocalExe).LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm:ss 'U
 Write-Host ("==> Staged exe timestamp: {0} (build output was {1})" -f $staged, $built) -ForegroundColor DarkGray
 
 Write-Host ('==> Starting ' + $LocalExe) -ForegroundColor Cyan
-Start-Process -FilePath $LocalExe -WorkingDirectory $Cache -WindowStyle Normal
+$started = Start-Process -FilePath $LocalExe -WorkingDirectory $Cache -WindowStyle Normal -PassThru
+Start-Sleep -Milliseconds 600
+if ($started.HasExited) {
+    Write-Error ("AYR Audio Link exited immediately (code " + $started.ExitCode + "). Check log or run from a console for errors.")
+}
