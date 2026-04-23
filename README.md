@@ -15,6 +15,7 @@ ayr-audio-link/
 ├── src/                           the sender binary (ayr-audio-link)
 ├── crates/
 │   └── ayr-audio-link-core/       shared wire format + mDNS (library)
+├── launch-*.ps1 / launch-*.sh     Windows build + staged launch (from WSL or PowerShell)
 ├── installer/                     Inno Setup project + build script
 └── docs/                          user docs + release checklist
 ```
@@ -32,6 +33,18 @@ cargo build --release
 # Build the signed installer exe (lands in .\dist\)
 powershell -ExecutionPolicy Bypass -File .\installer\build-installer.ps1
 ```
+
+## Run (WSL + Windows binary — same pattern as AYR Audio Meter)
+
+The shippable app is the **Windows** `.exe`. If you edit from WSL, do **not** rely on a bare Linux `cargo run` for day-to-day UI work; use these scripts so Cargo runs on the Windows side, artifacts land on NTFS, and the staged copy avoids SmartScreen noise on `\\wsl$\` paths.
+
+| Goal | Windows (repo root) | WSL (repo root) |
+|------|----------------------|-----------------|
+| Fast debug iteration | `powershell -ExecutionPolicy Bypass -File .\launch-dev.ps1` | `./launch-dev.sh` |
+| Release binary + launch | `powershell -ExecutionPolicy Bypass -File .\launch-release.ps1` | `./launch-release.sh` |
+| Watch + rebuild + restart | `powershell -ExecutionPolicy Bypass -File .\launch-dev-watch.ps1` (needs `cargo install cargo-watch`) | `./launch-dev-watch.sh` |
+
+Staging directory: `%LOCALAPPDATA%\AyrAudioLink\` (debug object files use `%LOCALAPPDATA%\AyrAudioLink\cargo-target-dev\` so incremental builds stay off the UNC-mounted tree).
 
 ## Meter integration
 

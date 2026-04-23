@@ -53,6 +53,8 @@ chrono = { version = "0.4", features = ["serde"] }
 # as in their DAW of choice.
 cpal = "0.17"
 egui = "0.34"
+# Decode embedded `assets/brand-hero.png` for the header (PNG only keeps the dep small).
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 # Linux / macOS: Glow (OpenGL). Keeps the build producing a usable binary
 # on a WSL-side `cargo check --all-targets` even though Link only ships

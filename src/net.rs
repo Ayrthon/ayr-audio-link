@@ -17,10 +17,10 @@
 //! feature is overkill. We use a per-peer bounded `VecDeque` protected by
 //! a mutex — pedestrian but it handles the 1-to-N pattern cleanly.
 
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, ErrorKind, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -133,6 +133,12 @@ impl Server {
         self.handshake.lock().clone()
     }
 
+    /// Clear the published format after capture has fully stopped so mDNS
+    /// reconciliation does not treat a dead session as live.
+    pub fn reset_handshake(&self) {
+        *self.handshake.lock() = None;
+    }
+
     /// Bind on `0.0.0.0:<port>` and start accepting. Safe to call again
     /// after `stop()` to restart on a different port.
     pub fn start(&mut self, port: u16) -> Result<()> {
@@ -142,8 +148,8 @@ impl Server {
         let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port))
             .with_context(|| format!("bind 0.0.0.0:{port}"))?;
         listener
-            .set_nonblocking(false)
-            .context("listener set_nonblocking(false)")?;
+            .set_nonblocking(true)
+            .context("listener set_nonblocking(true)")?;
         let local = listener.local_addr().ok();
         *self.shared.listening_on.lock() = local;
 
@@ -163,21 +169,19 @@ impl Server {
     pub fn stop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         // Tear down peers so their writer threads unblock on shutdown.
-        for p in self.shared.peers.lock().drain(..) {
+        // Collect under a short `peers` lock only — never hold `peers` while
+        // taking each `stream` mutex (same pattern as `submit`).
+        let drained: Vec<Arc<PeerState>> = self.shared.peers.lock().drain(..).collect();
+        for p in drained {
             p.stop.store(true, Ordering::Relaxed);
             if let Some(s) = p.stream.lock().take() {
                 let _ = s.shutdown(Shutdown::Both);
             }
         }
-        // The accept thread wakes on listener drop — but our listener is
-        // owned inside the thread. Easiest shutdown: dial ourselves to
-        // break the blocking `accept()`.
-        if let Some(addr) = self.shared.listening_on.lock().take() {
-            let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(250));
-        }
         if let Some(h) = self.accept_thread.take() {
             let _ = h.join();
         }
+        *self.shared.listening_on.lock() = None;
     }
 
     /// UI pushes the current capture format here whenever it changes. The
@@ -185,12 +189,16 @@ impl Server {
     /// they reconnect with the new parameters. Returns `true` if this
     /// changed the format.
     pub fn update_format(&self, hs: Handshake) -> bool {
-        let mut guard = self.handshake.lock();
-        if guard.as_ref() == Some(&hs) {
-            return false;
-        }
-        *guard = Some(hs);
-        for p in self.shared.peers.lock().drain(..) {
+        let kicked: Vec<Arc<PeerState>> = {
+            let mut peers = self.shared.peers.lock();
+            let mut guard = self.handshake.lock();
+            if guard.as_ref() == Some(&hs) {
+                return false;
+            }
+            *guard = Some(hs);
+            peers.drain(..).collect()
+        };
+        for p in kicked {
             p.stop.store(true, Ordering::Relaxed);
             if let Some(s) = p.stream.lock().take() {
                 let _ = s.shutdown(Shutdown::Both);
@@ -202,17 +210,20 @@ impl Server {
     /// Hand a block of PCM to every connected peer. Cheap (no copy inside
     /// the mutex region) when there are no peers.
     pub fn submit_frame(&self, pts_ns: u64, pcm_le_bytes: Vec<u8>) {
-        let peers = self.shared.peers.lock();
-        if peers.is_empty() {
-            return;
-        }
+        let peer_refs: Vec<Arc<PeerState>> = {
+            let peers = self.shared.peers.lock();
+            if peers.is_empty() {
+                return;
+            }
+            peers.iter().cloned().collect()
+        };
         // Fan out by cheap reference clone — one `Arc<FrameSlice>` is
         // shared across all peers' queues.
         let slice = Arc::new(FrameSlice {
             pts_ns,
             payload: pcm_le_bytes,
         });
-        for p in peers.iter() {
+        for p in peer_refs.iter() {
             let mut q = p.queue.lock();
             if q.len() >= PER_PEER_QUEUE_LIMIT {
                 // Overflow: drop the oldest frame. A peer that can't keep up
@@ -258,13 +269,19 @@ impl ServerHandle {
     pub fn update_format_if_changed(&self, channels: u8, sample_rate: u32) {
         let display_name = self.display_name.lock().clone();
         let candidate = Handshake::new(sample_rate, channels, display_name);
-        let mut guard = self.handshake.lock();
-        if guard.as_ref() == Some(&candidate) {
-            return;
-        }
-        *guard = Some(candidate);
-        // Kick existing peers so they reconnect with the new handshake.
-        for p in self.shared.peers.lock().drain(..) {
+        // Always take `peers` before `handshake` so we never nest the opposite
+        // way round from `submit` (`peers` then `queue`). Holding `handshake`
+        // first then `peers` could deadlock the capture thread and freeze Stop.
+        let kicked: Vec<Arc<PeerState>> = {
+            let mut peers = self.shared.peers.lock();
+            let mut guard = self.handshake.lock();
+            if guard.as_ref() == Some(&candidate) {
+                return;
+            }
+            *guard = Some(candidate);
+            peers.drain(..).collect()
+        };
+        for p in kicked {
             p.stop.store(true, Ordering::Relaxed);
             if let Some(s) = p.stream.lock().take() {
                 let _ = s.shutdown(Shutdown::Both);
@@ -275,12 +292,15 @@ impl ServerHandle {
     /// Push one PCM block to every connected peer. `pcm_le_bytes` is the
     /// interleaved `f32` frame encoded as little-endian bytes.
     pub fn submit(&self, pcm_le_bytes: Vec<u8>) {
-        let peers = self.shared.peers.lock();
-        if peers.is_empty() {
-            return;
-        }
+        let peer_refs: Vec<Arc<PeerState>> = {
+            let peers = self.shared.peers.lock();
+            if peers.is_empty() {
+                return;
+            }
+            peers.iter().cloned().collect()
+        };
         let pts_ns = now_pts_ns();
-        for p in peers.iter() {
+        for p in peer_refs.iter() {
             let mut q = p.queue.lock();
             if q.len() >= PER_PEER_QUEUE_LIMIT {
                 q.pop_front();
@@ -300,15 +320,16 @@ fn accept_loop(
     handshake: Arc<Mutex<Option<Handshake>>>,
     _identity: Arc<IdentityStore>,
 ) {
-    for incoming in listener.incoming() {
+    // Non-blocking `accept` so `Server::stop` never waits indefinitely on
+    // `join` for a sentinel TCP dial (which can fail or stall on some hosts).
+    loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        match incoming {
-            Ok(stream) => {
-                // Drop the sentinel "wake-up" connection from `Server::stop`
-                // without spinning up a worker.
+        match listener.accept() {
+            Ok((stream, _)) => {
                 if stop.load(Ordering::Relaxed) {
+                    let _ = stream.shutdown(Shutdown::Both);
                     break;
                 }
                 let Some(current_hs) = handshake.lock().clone() else {
@@ -319,9 +340,9 @@ fn accept_loop(
                 if let Err(e) = configure_stream(&stream) {
                     log::warn!("configure peer stream: {e:#}");
                 }
-                let addr = stream.peer_addr().unwrap_or_else(|_| {
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
-                });
+                let addr = stream
+                    .peer_addr()
+                    .unwrap_or_else(|_| SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0));
                 let id = shared.next_peer_id.fetch_add(1, Ordering::Relaxed);
                 let state = Arc::new(PeerState {
                     id,
@@ -348,6 +369,9 @@ fn accept_loop(
                             .retain(|p| !Arc::ptr_eq(p, &state));
                     })
                     .ok();
+            }
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {
+                thread::sleep(Duration::from_millis(5));
             }
             Err(e) => {
                 if stop.load(Ordering::Relaxed) {

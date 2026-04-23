@@ -12,13 +12,13 @@
 //! The sender doesn't need the meter's DSP / LUFS / spectrum plumbing —
 //! its only job is to hand raw PCM to the TCP writer in `net.rs`.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use anyhow::{Context, Result, anyhow};
-use cpal::SampleFormat;
+use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::SampleFormat;
 
 /// Cap matches `ayr_audio_link_core::MAX_CHANNELS` so a sender can never
 /// advertise more channels than the meter will accept.
@@ -37,14 +37,19 @@ pub struct DeviceInfo {
     pub max_channels: u8,
 }
 
+fn cpal_device_label(device: &cpal::Device) -> String {
+    device
+        .description()
+        .map(|desc| desc.name().to_string())
+        .unwrap_or_else(|_| "(unnamed input)".to_string())
+}
+
 pub fn list_devices() -> Result<Vec<DeviceInfo>> {
     let host = cpal::default_host();
     let mut out: Vec<DeviceInfo> = Vec::new();
 
     for d in host.input_devices().context("enumerate cpal inputs")? {
-        let name = d
-            .name()
-            .unwrap_or_else(|_| "(unnamed input)".to_string());
+        let name = cpal_device_label(&d);
         let max_channels = d
             .default_input_config()
             .map(|c| c.channels() as u8)
@@ -68,7 +73,7 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>> {
 pub fn default_input_name() -> Option<String> {
     cpal::default_host()
         .default_input_device()
-        .and_then(|d| d.name().ok())
+        .and_then(|d| d.description().ok().map(|desc| desc.name().to_string()))
 }
 
 #[cfg(windows)]
@@ -111,8 +116,14 @@ pub struct Capture {
 }
 
 impl Capture {
-    pub fn stop(&mut self) {
+    /// Set the stop flag without waiting — use before tearing down TCP so
+    /// the capture thread can wind down while peers are already gone.
+    pub fn signal_stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
+    }
+
+    pub fn stop(&mut self) {
+        self.signal_stop();
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
@@ -131,10 +142,7 @@ pub struct StreamFormat {
     pub channels: u8,
 }
 
-pub fn start_capture<S: SampleSink>(
-    device: DeviceInfo,
-    sink: S,
-) -> Result<Capture> {
+pub fn start_capture<S: SampleSink>(device: DeviceInfo, sink: S) -> Result<Capture> {
     let stop = Arc::new(AtomicBool::new(false));
     let format = Arc::new(parking_lot::Mutex::new(None::<StreamFormat>));
 
@@ -197,7 +205,11 @@ fn run_cpal_input<S: SampleSink>(
     let device = host
         .input_devices()
         .context("enumerate cpal inputs")?
-        .find(|d| d.name().map(|n| n == device_name).unwrap_or(false))
+        .find(|d| {
+            d.description()
+                .map(|desc| desc.name() == device_name)
+                .unwrap_or(false)
+        })
         .ok_or_else(|| anyhow!("input device not found: {device_name}"))?;
 
     let cfg = device
@@ -254,7 +266,8 @@ fn run_cpal_input<S: SampleSink>(
                 move |data: &[u16], _| {
                     scratch.clear();
                     scratch.extend(
-                        data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0),
+                        data.iter()
+                            .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0),
                     );
                     sink_cb.lock().on_block(&scratch, channels, sample_rate);
                 },
@@ -280,13 +293,10 @@ mod windows_loopback {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use anyhow::{Context, Result, anyhow};
-    use wasapi::{
-        Direction, DeviceEnumerator, SampleType, StreamMode, WaveFormat,
-        initialize_mta,
-    };
+    use anyhow::{anyhow, Context, Result};
+    use wasapi::{initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode, WaveFormat};
 
-    use super::{DeviceInfo, MAX_CHANNELS, SampleSink, SourceKind, StreamFormat};
+    use super::{DeviceInfo, SampleSink, SourceKind, StreamFormat, MAX_CHANNELS};
 
     pub fn list_output_devices() -> Result<Vec<DeviceInfo>> {
         initialize_mta().ok();

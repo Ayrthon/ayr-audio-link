@@ -26,6 +26,7 @@ mod app;
 mod audio;
 mod identity;
 mod net;
+mod theme;
 mod updater;
 
 use eframe::egui::{IconData, ViewportBuilder};
@@ -45,8 +46,8 @@ fn main() -> eframe::Result<()> {
 
     let icon = load_icon();
     let viewport = ViewportBuilder::default()
-        .with_inner_size([480.0, 560.0])
-        .with_min_inner_size([400.0, 480.0])
+        .with_inner_size([400.0, 520.0])
+        .with_min_inner_size([360.0, 420.0])
         .with_title("AYR Audio Link")
         .with_icon(icon);
 

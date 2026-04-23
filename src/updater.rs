@@ -44,7 +44,10 @@ pub enum UpdateStatus {
     Checking,
     UpToDate,
     Available(ReleaseInfo),
-    Downloading { progress: f32, total_bytes: u64 },
+    Downloading {
+        progress: f32,
+        total_bytes: u64,
+    },
     Downloaded(PathBuf),
     LaunchFailed(String),
     Launching,
@@ -157,10 +160,7 @@ fn fetch_latest_release(repo: &str) -> anyhow::Result<ReleaseInfo> {
 
 fn parse_triple(v: &str) -> (u32, u32, u32) {
     let v = v.trim().trim_start_matches(|c: char| c == 'v' || c == 'V');
-    let core = v
-        .split(|c: char| c == '-' || c == '+')
-        .next()
-        .unwrap_or(v);
+    let core = v.split(|c: char| c == '-' || c == '+').next().unwrap_or(v);
     let mut parts = core.split('.');
     let major = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let minor = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);

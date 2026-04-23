@@ -209,12 +209,10 @@ pub fn local_peer_fingerprint() -> String {
 
 #[cfg(windows)]
 fn windows_machine_user() -> Option<(String, String)> {
-    use winreg::RegKey;
     use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let key = hklm
-        .open_subkey(r"SOFTWARE\Microsoft\Cryptography")
-        .ok()?;
+    let key = hklm.open_subkey(r"SOFTWARE\Microsoft\Cryptography").ok()?;
     let guid: String = key.get_value("MachineGuid").ok()?;
     let domain = std::env::var("USERDOMAIN").ok();
     let user = std::env::var("USERNAME").ok()?;
