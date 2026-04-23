@@ -26,7 +26,7 @@
 use std::sync::Arc;
 use std::sync::mpsc;
 
-use eframe::egui::{self, Color32, CornerRadius, Direction, Frame, RichText, Shape, Stroke, StrokeKind};
+use eframe::egui::{self, Align, Color32, CornerRadius, Direction, Frame, RichText, Shape, Stroke, StrokeKind};
 use parking_lot::Mutex;
 
 use ayr_audio_link_core::{DEFAULT_PORT, discovery, wire::Handshake};
@@ -75,20 +75,31 @@ pub struct LinkApp {
     update: updater::SharedUpdateStatus,
     update_dismissed: bool,
 
-    /// Brand artwork (same mockup as marketing); shown in the header.
-    brand_texture: Option<egui::TextureHandle>,
+    /// App icon PNG (header + window icon source).
+    app_icon_texture: Option<egui::TextureHandle>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct LiveLevel {
     peak_db: f32,
     active: bool,
 }
 
+impl Default for LiveLevel {
+    fn default() -> Self {
+        Self {
+            // Must be below the meter mapping range so the bar reads "empty"
+            // (0.0 dB would map to a full bar).
+            peak_db: -120.0,
+            active: false,
+        }
+    }
+}
+
 impl LinkApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         theme::apply(&cc.egui_ctx);
-        let brand_texture = theme::load_brand_texture(&cc.egui_ctx);
+        let app_icon_texture = theme::load_app_icon_texture(&cc.egui_ctx);
         let identity = Arc::new(IdentityStore::load_or_init());
         let devices = audio::list_devices().unwrap_or_default();
         let selected_device = pick_default_device(&devices);
@@ -119,7 +130,7 @@ impl LinkApp {
                 shared
             },
             update_dismissed: false,
-            brand_texture,
+            app_icon_texture,
         }
     }
 
@@ -263,6 +274,7 @@ impl LinkApp {
                     .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8));
                 banner.show(ui, |ui| {
+                    theme::fill_horizontal_strip(ui);
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new(format!(
@@ -296,6 +308,7 @@ impl LinkApp {
                     .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
+                        theme::fill_horizontal_strip(ui);
                         ui.horizontal(|ui| {
                             ui.label(
                                 RichText::new("Downloading update…")
@@ -326,6 +339,7 @@ impl LinkApp {
                     .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
+                        theme::fill_horizontal_strip(ui);
                         ui.horizontal(|ui| {
                             ui.label(
                                 RichText::new("Update downloaded.")
@@ -376,6 +390,7 @@ impl LinkApp {
                     .stroke(Stroke::NONE)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
+                        theme::fill_horizontal_strip(ui);
                         ui.horizontal(|ui| {
                             ui.colored_label(
                                 Color32::from_rgb(255, 200, 160),
@@ -453,37 +468,64 @@ impl eframe::App for LinkApp {
         self.reconcile_mdns();
 
         egui::CentralPanel::default()
-            .frame(Frame::NONE.inner_margin(egui::Margin::same(22)))
+            .frame(Frame::NONE.inner_margin(egui::Margin::symmetric(20, 18)))
             .show_inside(ui, |ui| {
                 let panel_rect = ui.max_rect();
                 theme::paint_background(&ui.painter(), panel_rect);
 
-                draw_app_header(ui, self.brand_texture.as_ref());
+                let content_width = ui.available_width();
+                let scroll_out = egui::ScrollArea::vertical()
+                    .id_salt("ayr_link_root_scroll")
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(content_width);
 
-                ui.add_space(theme::GAP_MD);
-                self.maybe_draw_update_banner(ui);
+                            draw_app_header(ui, self.app_icon_texture.as_ref());
 
-                theme::glass_frame().show(ui, |ui| {
+                    ui.add_space(theme::GAP_MD);
+                    self.maybe_draw_update_banner(ui);
+
+                    theme::glass_frame().show(ui, |ui| {
+                    theme::fill_horizontal_strip(ui);
                     ui.spacing_mut().item_spacing.y = theme::GAP_SM;
-                    ui.label(
-                        RichText::new("IDENTITY")
-                            .size(10.0)
-                            .strong()
-                            .color(theme::CYAN),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme::GAP_SM;
-                        ui.label(RichText::new("Broadcasting as").color(theme::MUTED));
-                        ui.label(
-                            RichText::new(&self.display_name_editor)
-                                .monospace()
-                                .strong()
-                                .color(Color32::WHITE),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("Edit").clicked() {
-                                self.show_advanced = !self.show_advanced;
-                            }
+                    ui.with_layout(egui::Layout::left_to_right(Align::TOP), |ui| {
+                        theme::section_icon(ui, "👤");
+                        ui.add_space(10.0);
+                        ui.vertical(|ui| {
+                            theme::fill_horizontal_strip(ui);
+                            ui.spacing_mut().item_spacing.y = theme::GAP_SM;
+                            ui.label(
+                                RichText::new("IDENTITY")
+                                    .size(10.0)
+                                    .strong()
+                                    .color(theme::CYAN),
+                            );
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = theme::GAP_SM;
+                                ui.label(RichText::new("Broadcasting as").color(theme::MUTED));
+                                ui.label(
+                                    RichText::new(&self.display_name_editor)
+                                        .size(18.0)
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        let edit = egui::Button::new(
+                                            RichText::new("Edit").size(12.0).color(Color32::WHITE),
+                                        )
+                                        .fill(Color32::from_rgba_unmultiplied(18, 26, 42, 255))
+                                        .stroke(Stroke::new(
+                                            1.0,
+                                            Color32::from_rgba_unmultiplied(200, 220, 255, 90),
+                                        ));
+                                        if ui.add(edit).clicked() {
+                                            self.show_advanced = !self.show_advanced;
+                                        }
+                                    },
+                                );
+                            });
                         });
                     });
 
@@ -523,93 +565,120 @@ impl eframe::App for LinkApp {
                             "Minimize on close (stay in taskbar)",
                         );
                     }
-                });
-
-                theme::glass_frame().show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = theme::GAP_SM;
-                    ui.label(
-                        RichText::new("AUDIO SOURCE")
-                            .size(10.0)
-                            .strong()
-                            .color(theme::CYAN),
-                    );
-
-                    let current_sel = self.selected_device;
-                    let devices_snapshot: Vec<(SourceKind, String)> = self
-                        .devices
-                        .iter()
-                        .map(|d| (d.kind, d.name.clone()))
-                        .collect();
-                    let mut pending_select: Option<usize> = None;
-                    let mut pending_refresh = false;
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme::GAP_SM;
-                        let reserve_refresh = 76.0;
-                        let combo_w = (ui.available_width()
-                            - reserve_refresh
-                            - theme::GAP_SM)
-                            .max(160.0);
-                        let selected_label = current_sel
-                            .and_then(|i| self.devices.get(i))
-                            .map(device_label)
-                            .unwrap_or_else(|| "(none)".into());
-                        egui::ComboBox::from_id_salt("device_combo")
-                            .popup_style(theme::combo_popup_style())
-                            .selected_text(RichText::new(selected_label).color(Color32::WHITE))
-                            .width(combo_w)
-                            .show_ui(ui, |ui| {
-                                let mut section =
-                                    |ui: &mut egui::Ui, title: &str, kind: SourceKind| {
-                                        ui.label(
-                                            RichText::new(title)
-                                                .size(11.0)
-                                                .strong()
-                                                .color(theme::CYAN),
-                                        );
-                                        for (i, (k, name)) in devices_snapshot.iter().enumerate()
-                                        {
-                                            if *k != kind {
-                                                continue;
-                                            }
-                                            let sel = Some(i) == current_sel;
-                                            if ui.selectable_label(sel, name).clicked() {
-                                                pending_select = Some(i);
-                                            }
-                                        }
-                                    };
-                                section(ui, "INPUTS (mic / line)", SourceKind::Input);
-                                ui.separator();
-                                section(
-                                    ui,
-                                    "LOOPBACK (what speakers play)",
-                                    SourceKind::Loopback,
-                                );
-                            });
-                        if ui.button("Refresh").clicked() {
-                            pending_refresh = true;
-                        }
                     });
-                    if let Some(i) = pending_select {
-                        self.selected_device = Some(i);
-                    }
-                    if pending_refresh {
-                        let previous = self.selected().map(|d| (d.kind, d.name.clone()));
-                        self.devices = audio::list_devices().unwrap_or_default();
-                        self.selected_device = previous
-                            .and_then(|prev| {
-                                self.devices.iter().position(|d| {
-                                    d.kind == prev.0 && d.name == prev.1
-                                })
-                            })
-                            .or_else(|| pick_default_device(&self.devices));
-                    }
 
-                    ui.add_space(theme::GAP_XS);
-                    draw_level_bar(ui, *self.level_shared.lock());
-                });
+                    theme::glass_frame().show(ui, |ui| {
+                    theme::fill_horizontal_strip(ui);
+                    ui.with_layout(egui::Layout::left_to_right(Align::TOP), |ui| {
+                        theme::section_icon(ui, "🎤");
+                        ui.add_space(10.0);
+                        ui.vertical(|ui| {
+                            theme::fill_horizontal_strip(ui);
+                            ui.spacing_mut().item_spacing.y = theme::GAP_SM;
+                            ui.label(
+                                RichText::new("AUDIO SOURCE")
+                                    .size(10.0)
+                                    .strong()
+                                    .color(theme::CYAN),
+                            );
 
-                theme::glass_frame().show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = theme::GAP_SM;
+                            let current_sel = self.selected_device;
+                            let devices_snapshot: Vec<(SourceKind, String)> = self
+                                .devices
+                                .iter()
+                                .map(|d| (d.kind, d.name.clone()))
+                                .collect();
+                            let mut pending_select: Option<usize> = None;
+                            let mut pending_refresh = false;
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = theme::GAP_SM;
+                                let reserve_refresh = 76.0;
+                                let combo_w = (ui.available_width()
+                                    - reserve_refresh
+                                    - theme::GAP_SM)
+                                    .max(160.0);
+                                let selected_label = current_sel
+                                    .and_then(|i| self.devices.get(i))
+                                    .map(device_label)
+                                    .unwrap_or_else(|| "(none)".into());
+                                egui::ComboBox::from_id_salt("device_combo")
+                                    .popup_style(theme::combo_popup_style())
+                                    .selected_text(RichText::new(selected_label).color(Color32::WHITE))
+                                    .width(combo_w)
+                                    .height(260.0)
+                                    .truncate()
+                                    .show_ui(ui, |ui| {
+                                        // ComboBox defaults the menu to `Extend`, which widens the
+                                        // popup to fit long device names — keep width = combo button.
+                                        ui.style_mut()
+                                            .wrap_mode = Some(egui::TextWrapMode::Truncate);
+                                        let row_w = ui.available_width();
+                                        ui.set_width(row_w);
+
+                                        let mut section =
+                                            |ui: &mut egui::Ui, title: &str, kind: SourceKind| {
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        RichText::new(title)
+                                                            .size(11.0)
+                                                            .strong()
+                                                            .color(theme::CYAN),
+                                                    )
+                                                    .truncate(),
+                                                );
+                                                for (i, (k, name)) in
+                                                    devices_snapshot.iter().enumerate()
+                                                {
+                                                    if *k != kind {
+                                                        continue;
+                                                    }
+                                                    let sel = Some(i) == current_sel;
+                                                    if ui
+                                                        .add(
+                                                            egui::Button::selectable(sel, name.as_str())
+                                                                .truncate(),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        pending_select = Some(i);
+                                                    }
+                                                }
+                                            };
+                                        section(ui, "INPUTS (mic / line)", SourceKind::Input);
+                                        ui.separator();
+                                        section(
+                                            ui,
+                                            "LOOPBACK (what speakers play)",
+                                            SourceKind::Loopback,
+                                        );
+                                    });
+                                if ui.button("Refresh").clicked() {
+                                    pending_refresh = true;
+                                }
+                            });
+                            if let Some(i) = pending_select {
+                                self.selected_device = Some(i);
+                            }
+                            if pending_refresh {
+                                let previous = self.selected().map(|d| (d.kind, d.name.clone()));
+                                self.devices = audio::list_devices().unwrap_or_default();
+                                self.selected_device = previous
+                                    .and_then(|prev| {
+                                        self.devices.iter().position(|d| {
+                                            d.kind == prev.0 && d.name == prev.1
+                                        })
+                                    })
+                                    .or_else(|| pick_default_device(&self.devices));
+                            }
+
+                            ui.add_space(theme::GAP_XS);
+                            draw_level_bar(ui, *self.level_shared.lock());
+                        });
+                    });
+                    });
+
+                    theme::glass_frame().show(ui, |ui| {
+                    theme::fill_horizontal_strip(ui);
                     let status = self.server.status();
                     draw_status_block(
                         ui,
@@ -618,100 +687,124 @@ impl eframe::App for LinkApp {
                         self.stopping_capture(),
                         self.advertiser.is_some(),
                     );
-                });
-
-                ui.add_space(theme::GAP_MD);
-                let full_btn_w = ui.available_width();
-                if self.capture_alive() {
-                    if theme::gradient_stop_button(ui, "Stop broadcasting", full_btn_w).clicked() {
-                        self.stop_broadcasting();
-                    }
-                } else if self.stopping_capture() {
-                    ui.add_enabled_ui(false, |ui| {
-                        theme::gradient_stop_button(ui, "Stopping broadcast…", full_btn_w);
                     });
-                } else if theme::gradient_primary_button(
-                    ui,
-                    "Start broadcasting",
-                    full_btn_w,
-                    self.selected_device.is_some(),
-                )
-                .clicked()
-                {
-                    self.start_broadcasting();
-                }
 
-                if let Some(err) = &self.last_error {
-                    ui.add_space(theme::GAP_SM);
-                    Frame::NONE
-                        .fill(Color32::from_rgba_unmultiplied(48, 14, 18, 245))
-                        .corner_radius(CornerRadius::same(10))
-                        .stroke(Stroke::NONE)
-                        .inner_margin(egui::Margin::symmetric(12, 8))
-                        .show(ui, |ui| {
-                            ui.colored_label(Color32::from_rgb(255, 170, 170), err);
+                    ui.add_space(theme::GAP_MD);
+                    ui.vertical(|ui| {
+                        theme::fill_horizontal_strip(ui);
+                        let full_btn_w = ui.available_width();
+                        if self.capture_alive() {
+                            if theme::gradient_stop_button(ui, "Stop broadcasting", full_btn_w).clicked()
+                            {
+                                self.stop_broadcasting();
+                            }
+                        } else if self.stopping_capture() {
+                            ui.add_enabled_ui(false, |ui| {
+                                theme::gradient_stop_button(ui, "Stopping broadcast…", full_btn_w);
+                            });
+                        } else if theme::gradient_primary_button(
+                            ui,
+                            "⏵  Start broadcasting",
+                            full_btn_w,
+                            self.selected_device.is_some(),
+                        )
+                        .clicked()
+                        {
+                            self.start_broadcasting();
+                        }
+
+                        if let Some(err) = &self.last_error {
+                            ui.add_space(theme::GAP_SM);
+                            Frame::NONE
+                                .fill(Color32::from_rgba_unmultiplied(48, 14, 18, 245))
+                                .corner_radius(CornerRadius::same(10))
+                                .stroke(Stroke::NONE)
+                                .inner_margin(egui::Margin::symmetric(12, 8))
+                                .show(ui, |ui| {
+                                    theme::fill_horizontal_strip(ui);
+                                    ui.colored_label(Color32::from_rgb(255, 170, 170), err);
+                                });
+                        }
+                    });
                         });
+                    });
+
+                // Grow / shrink the native window to match laid-out content height.
+                const VIEWPORT_W: f32 = 400.0;
+                const MIN_INNER_H: f32 = 520.0;
+                const MAX_INNER_H: f32 = 1200.0;
+                // Scroll content height excludes some chrome; pad so the last row is not tight.
+                const HEIGHT_PAD: f32 = 56.0;
+                let want_h = (scroll_out.content_size.y + HEIGHT_PAD)
+                    .clamp(MIN_INNER_H, MAX_INNER_H);
+                if let Some(ir) = ui.ctx().input(|i| i.viewport().inner_rect) {
+                    let cur_h = ir.height();
+                    if (want_h - cur_h).abs() > 2.0 {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::InnerSize(
+                            egui::vec2(VIEWPORT_W, want_h),
+                        ));
+                    }
                 }
             });
     }
 }
 
-fn draw_app_header(ui: &mut egui::Ui, brand_texture: Option<&egui::TextureHandle>) {
-    let header_bg = Color32::from_rgba_unmultiplied(12, 17, 28, 252);
+fn draw_app_header(ui: &mut egui::Ui, app_icon: Option<&egui::TextureHandle>) {
+    let header_bg = Color32::from_rgba_unmultiplied(10, 14, 24, 248);
     Frame::NONE
         .fill(header_bg)
-        .corner_radius(CornerRadius::same(10))
-        .stroke(Stroke::NONE)
-        .inner_margin(egui::Margin::symmetric(12, 10))
+        .corner_radius(CornerRadius::same(14))
+        .stroke(Stroke::new(1.0, theme::GLASS_STROKE))
+        .inner_margin(egui::Margin::symmetric(14, 12))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(12.0, 0.0);
-                let accent_h = 44.0;
-                let (accent_rect, _) = ui.allocate_exact_size(
-                    egui::vec2(3.0, accent_h),
-                    egui::Sense::hover(),
-                );
-                if ui.is_rect_visible(accent_rect) {
-                    ui.painter_at(accent_rect).add(Shape::gradient_rect(
-                        accent_rect,
-                        Direction::TopDown,
-                        [theme::CYAN, theme::COBALT],
-                    ));
-                }
-                if let Some(tex) = brand_texture {
+            theme::fill_horizontal_strip(ui);
+            ui.with_layout(egui::Layout::left_to_right(Align::TOP), |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(14.0, 0.0);
+                if let Some(tex) = app_icon {
                     ui.add(
                         egui::Image::from_texture(tex)
-                            .max_size(egui::vec2(44.0, 44.0))
-                            .corner_radius(CornerRadius::same(8)),
+                            .max_size(egui::vec2(56.0, 56.0))
+                            .corner_radius(CornerRadius::same(12))
+                            .bg_fill(Color32::from_rgba_unmultiplied(6, 10, 18, 255)),
                     );
+                } else {
+                    let (r, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
+                    if ui.is_rect_visible(r) {
+                        let p = ui.painter_at(r);
+                        p.rect_filled(r, CornerRadius::same(12), theme::GLASS_FILL);
+                        p.rect_stroke(
+                            r,
+                            CornerRadius::same(12),
+                            Stroke::new(1.0, theme::GLASS_STROKE),
+                            StrokeKind::Inside,
+                        );
+                    }
                 }
                 ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 3.0;
+                    theme::fill_horizontal_strip(ui);
+                    ui.spacing_mut().item_spacing.y = 4.0;
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         ui.label(
-                            RichText::new("AYR ")
-                                .size(19.0)
+                            RichText::new("AYR")
+                                .size(22.0)
                                 .strong()
                                 .color(Color32::WHITE),
                         );
+                        ui.add_space(6.0);
                         ui.label(
-                            RichText::new("Audio ")
-                                .size(19.0)
+                            RichText::new("Audio Link")
+                                .size(22.0)
                                 .strong()
-                                .color(theme::MUTED),
-                        );
-                        ui.label(
-                            RichText::new("Link")
-                                .size(20.0)
-                                .strong()
-                                .color(theme::CYAN),
+                                .color(theme::CYAN_BRIGHT),
                         );
                     });
                     ui.label(
-                        RichText::new("Send audio from this PC to AYR Audio Meter on the LAN.")
-                            .size(11.0)
-                            .color(Color32::from_rgba_unmultiplied(130, 170, 200, 230)),
+                        RichText::new(
+                            "Send audio from this PC to AYR Audio Meter on the LAN.",
+                        )
+                        .size(12.0)
+                        .color(theme::MUTED),
                     );
                 });
             });
@@ -789,8 +882,12 @@ fn draw_level_bar(ui: &mut egui::Ui, level: LiveLevel) {
         Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 160, 220, 70)),
         StrokeKind::Inside,
     );
-    // Map peak_db in [-60..0] to bar fraction [0..1].
-    let f = ((level.peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
+    // Map peak_db in [-60..0] to bar fraction [0..1]. When not capturing, keep empty.
+    let f = if level.active {
+        ((level.peak_db + 60.0) / 60.0).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let filled = egui::Rect::from_min_max(
         rect.min + egui::vec2(1.0, 1.0),
         egui::pos2(rect.min.x + 1.0 + (rect.width() - 2.0) * f, rect.max.y - 1.0),
@@ -799,7 +896,7 @@ fn draw_level_bar(ui: &mut egui::Ui, level: LiveLevel) {
         painter.add(Shape::gradient_rect(
             filled,
             Direction::LeftToRight,
-            [theme::CYAN, theme::COBALT],
+            [theme::CYAN_BRIGHT, theme::VIOLET],
         ));
         let warn = if level.peak_db > -3.0 {
             Some(Color32::from_rgba_unmultiplied(255, 60, 60, 110))
@@ -821,63 +918,76 @@ fn draw_status_block(
     stopping_capture: bool,
     mdns_advertising: bool,
 ) {
-    ui.label(
-        RichText::new("NETWORK")
-            .size(10.0)
-            .strong()
-            .color(theme::CYAN),
-    );
-    ui.add_space(theme::GAP_XS);
-    let headline = if stopping_capture {
-        "Stopping broadcast…".to_string()
-    } else {
-        match (capture_alive, status.listening_on) {
-            (true, Some(addr)) => format!("Listening on {addr}"),
-            (true, None) => "Listening (no local address resolved)".to_string(),
-            (false, _) => "Not broadcasting".to_string(),
-        }
-    };
-    ui.label(
-        RichText::new(headline)
-            .strong()
-            .size(14.0)
-            .color(Color32::WHITE),
-    );
-    if capture_alive {
-        ui.add_space(theme::GAP_XS);
-        let mdns_txt = if mdns_advertising {
-            "mDNS: visible to AYR Audio Meter on this LAN"
-        } else {
-            "mDNS: waiting for first audio block before announcing"
-        };
-        ui.label(RichText::new(mdns_txt).size(12.0).color(theme::MUTED));
-    }
-
-    ui.add_space(theme::GAP_MD);
-    ui.label(
-        RichText::new(format!("Connected meters: {}", status.peers.len()))
-            .strong()
-            .size(12.0)
-            .color(Color32::from_rgb(230, 245, 255)),
-    );
-    ui.add_space(theme::GAP_XS);
-    if status.peers.is_empty() {
-        ui.label(
-            RichText::new("(none — choose this stream in the meter’s device list)")
-                .size(12.0)
-                .color(theme::MUTED),
-        );
-    } else {
-        ui.spacing_mut().item_spacing.y = theme::GAP_XS;
+    ui.spacing_mut().item_spacing.y = theme::GAP_SM;
+    ui.with_layout(egui::Layout::left_to_right(Align::TOP), |ui| {
+        theme::section_icon(ui, "📶");
+        ui.add_space(10.0);
         ui.vertical(|ui| {
-            for p in &status.peers {
+            theme::fill_horizontal_strip(ui);
+            ui.spacing_mut().item_spacing.y = theme::GAP_XS;
+            ui.label(
+                RichText::new("NETWORK")
+                    .size(10.0)
+                    .strong()
+                    .color(theme::CYAN),
+            );
+            let headline = if stopping_capture {
+                "Stopping broadcast…".to_string()
+            } else {
+                match (capture_alive, status.listening_on) {
+                    (true, Some(addr)) => format!("Listening on {addr}"),
+                    (true, None) => "Listening (no local address resolved)".to_string(),
+                    (false, _) => "Not broadcasting".to_string(),
+                }
+            };
+            ui.label(
+                RichText::new(headline)
+                    .strong()
+                    .size(14.0)
+                    .color(Color32::WHITE),
+            );
+            if capture_alive {
+                ui.add_space(theme::GAP_XS);
+                let mdns_txt = if mdns_advertising {
+                    "mDNS: visible to AYR Audio Meter on this LAN"
+                } else {
+                    "mDNS: waiting for first audio block before announcing"
+                };
+                ui.label(RichText::new(mdns_txt).size(12.0).color(theme::MUTED));
+            }
+
+            ui.add_space(theme::GAP_MD);
+            ui.label(
+                RichText::new(format!("Connected meters: {}", status.peers.len()))
+                    .strong()
+                    .size(12.0)
+                    .color(Color32::from_rgb(230, 245, 255)),
+            );
+            ui.add_space(theme::GAP_XS);
+            if status.peers.is_empty() {
                 ui.label(
-                    RichText::new(format!("• {} — {} frames", p.addr, p.frames_sent))
-                        .size(12.0)
-                        .color(Color32::from_rgb(200, 230, 245)),
+                    RichText::new(
+                        "(none — choose this stream in the meter’s device list)",
+                    )
+                    .size(12.0)
+                    .color(theme::MUTED),
                 );
+            } else {
+                ui.spacing_mut().item_spacing.y = theme::GAP_XS;
+                ui.vertical(|ui| {
+                    for p in &status.peers {
+                        ui.label(
+                            RichText::new(format!(
+                                "• {} — {} frames",
+                                p.addr, p.frames_sent
+                            ))
+                            .size(12.0)
+                            .color(Color32::from_rgb(200, 230, 245)),
+                        );
+                    }
+                });
             }
         });
-    }
+    });
 }
 

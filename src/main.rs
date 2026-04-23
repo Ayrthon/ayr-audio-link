@@ -45,9 +45,14 @@ fn main() -> eframe::Result<()> {
     }));
 
     let icon = load_icon();
+    // Width stays fixed; height is driven from the UI (see `LinkApp::ui`) so
+    // expanding sections (e.g. Identity "Edit") do not clip. Cap avoids tiny laptops.
     let viewport = ViewportBuilder::default()
-        .with_inner_size([400.0, 520.0])
-        .with_min_inner_size([360.0, 420.0])
+        .with_inner_size([400.0, 640.0])
+        .with_min_inner_size([400.0, 520.0])
+        .with_max_inner_size([400.0, 1200.0])
+        .with_resizable(false)
+        .with_maximize_button(false)
         .with_title("AYR Audio Link")
         .with_icon(icon);
 
@@ -64,13 +69,26 @@ fn main() -> eframe::Result<()> {
 }
 
 fn load_icon() -> IconData {
-    // Placeholder icon — a single-pixel transparent PNG is enough for the
-    // dev build. The installer replaces this via winres at release-build
-    // time. Keeping the fallback small avoids holding up the MVP on
-    // asset pipelines.
+    const BYTES: &[u8] =
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app-icon.ico"));
+    const SZ: u32 = 32;
+    let Ok(img) = image::load_from_memory(BYTES) else {
+        return IconData {
+            rgba: vec![0u8; 4],
+            width: 1,
+            height: 1,
+        };
+    };
+    let rgba = img.to_rgba8();
+    let small = image::imageops::resize(
+        &rgba,
+        SZ,
+        SZ,
+        image::imageops::FilterType::Lanczos3,
+    );
     IconData {
-        rgba: vec![0u8; 4],
-        width: 1,
-        height: 1,
+        rgba: small.into_raw(),
+        width: SZ,
+        height: SZ,
     }
 }
