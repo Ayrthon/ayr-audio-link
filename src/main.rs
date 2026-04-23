@@ -20,7 +20,8 @@
 //! deliberate UX choice: the user can see at a glance whether it's
 //! running and which meter is attached.
 
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+// No console window when double-clicking or starting from Explorer (debug + release).
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod app;
 mod audio;
@@ -58,6 +59,7 @@ fn main() -> eframe::Result<()> {
 
     let native_options = eframe::NativeOptions {
         viewport,
+        centered: true,
         ..Default::default()
     };
 

@@ -17,6 +17,8 @@ Remove-Item Env:CARGO_INCREMENTAL -ErrorAction SilentlyContinue
 
 if (-not $SkipBuild) {
     Write-Host "==> cargo build (debug) -> $DevTargetRoot" -ForegroundColor Cyan
+    # Optional: stamp the in-app version chip (same idea as Meter’s AUDIO_METER_BUILD), e.g.
+    #   $env:AYR_LINK_BUILD = "$(git rev-parse --short HEAD)"
     cargo build
 }
 

@@ -24,6 +24,10 @@ pub const GAP_XS: f32 = 4.0;
 pub const GAP_SM: f32 = 6.0;
 pub const GAP_MD: f32 = 10.0;
 
+/// Vertical gap between stacked main blocks (header, version strip, glass cards), in px.
+/// Integer because egui 0.34 [`Margin`] uses `i8`; cast to `f32` for [`egui::Style::spacing`] fields.
+pub const SECTION_STACK_GAP: i8 = 2;
+
 /// Apply once at startup — dark chrome, cyan hover, transparent panel chrome.
 pub fn apply(ctx: &egui::Context) {
     let mut style = (*ctx.global_style()).clone();
@@ -83,7 +87,7 @@ pub fn glass_frame() -> Frame {
         .corner_radius(CornerRadius::same(14))
         .stroke(Stroke::new(1.0, GLASS_STROKE))
         .inner_margin(Margin::symmetric(14, 12))
-        .outer_margin(Margin::symmetric(0, 8))
+        .outer_margin(Margin::symmetric(0_i8, SECTION_STACK_GAP))
 }
 
 /// Expand this UI to the full width the parent row allocated (header, cards,
